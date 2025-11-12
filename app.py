@@ -5,7 +5,7 @@ from prepare_data import load_transaction_graph
 
 app = Flask(__name__)
 
-# Load model and example data (for feature scaling reference)
+# Load model
 data = load_transaction_graph()
 model = FraudDetectionGNN(in_channels=data.num_features, hidden_channels=32, out_channels=2)
 model.load_state_dict(torch.load('models/gnn_model.pt'))
@@ -17,7 +17,6 @@ def check_fraud():
     amount = float(payload.get('amount', 0))
     device_id = payload.get('device_id', 'D0')
 
-    # Prepare single-node inputs similar to predict.py
     device_val = abs(hash(device_id)) % 10
     amount_scaled = amount / (data.x[:,0].max().item() + 1e-9)
 
@@ -42,4 +41,3 @@ if __name__ == '__main__':
 
 
 
-# Invoke-WebRequest -Uri http://127.0.0.1:5000/api/check_fraud `-Method POST ` -Headers @{ "Content-Type" = "application/json" } ` -Body '{"amount":50000,"device_id":"D7"}'

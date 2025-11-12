@@ -10,8 +10,6 @@ def load_model(path='models/gnn_model.pt'):
     return model, data
 
 def analyze_transaction(amount, device_id, model=None, data=None):
-    # Simple single-node input: create a feature vector consistent with training features
-    # device encoding: hash to small integer
     device_val = abs(hash(device_id)) % 10
     amount_scaled = amount / (data.x[:,0].max().item() + 1e-9)
 
