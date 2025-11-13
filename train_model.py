@@ -10,9 +10,9 @@ from prepare_data import load_transaction_graph
 
 def train_and_save_model(save_path="models/gnn_model.pt"):
     # -------------------------------
-    # 1. Load dataset
+    # 1. Load dataset (FIXED: Unpack the tuple)
     # -------------------------------
-    data = load_transaction_graph() 
+    data, _, _ = load_transaction_graph() 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
