@@ -9,10 +9,13 @@ import os
 MODEL_DIR = "models"
 ENCODERS_PATH = os.path.join(MODEL_DIR, "encoders.pkl")
 SCALER_PATH = os.path.join(MODEL_DIR, "scaler.pkl")
+FRAUD_FREQ_PATH = os.path.join(MODEL_DIR, "fraud_freq.pkl")
 
 def load_transaction_graph(csv_path="data/transactions.csv"):
     """
-    Build a transaction graph for fraud detection AND save the preprocessing objects.
+    Build a transaction graph for fraud detection AND save preprocessing objects.
+    
+    The function now calculates and injects historical fraud frequency as node features.
     """
     df = pd.read_csv(csv_path)
 
@@ -21,7 +24,6 @@ def load_transaction_graph(csv_path="data/transactions.csv"):
     for col in ['sender_id', 'receiver_id', 'device_id', 'merchant_id', 'location']:
         if col in df.columns:
             le = LabelEncoder()
-            # Fit and transform
             df[col] = le.fit_transform(df[col].astype(str))
             label_encoders[col] = le
         else:
@@ -30,7 +32,6 @@ def load_transaction_graph(csv_path="data/transactions.csv"):
     # --- 2. Normalize numerical columns ---
     scaler = StandardScaler()
     if 'amount' in df.columns:
-        # Fit and transform
         df['amount_norm'] = scaler.fit_transform(df[['amount']])
     else:
         df['amount_norm'] = 0.0
@@ -43,23 +44,44 @@ def load_transaction_graph(csv_path="data/transactions.csv"):
     else:
         df['hour_norm'] = 0.0
 
-    # --- SAVE ENCODERS AND SCALER (NEW LOGIC) ---
+    # --- NEW AUGMENTATION STEP: Calculate Historical Fraud Frequency ---
+    fraud_freq_map = {}
+    global_fraud_rate = df['is_fraud'].mean()
+    
+    for col in ['sender_id', 'device_id']:
+        if col in df.columns:
+            df[f'{col}_fraud_freq'] = df.groupby(col)['is_fraud'].transform('mean')
+            
+            fraud_freq_map[col] = df.groupby(col)['is_fraud'].mean().to_dict()
+        else:
+            df[f'{col}_fraud_freq'] = global_fraud_rate
+            fraud_freq_map[col] = {}
+    
+    # --- SAVE ENCODERS, SCALER, AND FRAUD FREQUENCY MAP ---
     os.makedirs(MODEL_DIR, exist_ok=True)
     with open(ENCODERS_PATH, 'wb') as f:
         pickle.dump(label_encoders, f)
     with open(SCALER_PATH, 'wb') as f:
         pickle.dump(scaler, f)
-    print(f"✅ Encoders/Scalers saved to {MODEL_DIR}/")
+    with open(FRAUD_FREQ_PATH, 'wb') as f:
+        pickle.dump(fraud_freq_map, f)
+    print(f"✅ Encoders/Scalers/Frequency Map saved to {MODEL_DIR}/")
 
-    # --- 3. Create node features (DTYPE FIX RETAINED) ---
-    feature_cols = ['amount_norm', 'hour_norm', 'device_id', 'merchant_id', 'sender_id', 'receiver_id']
-    features_np = df[feature_cols].values.astype(np.float32)
+
+    # --- 3. Create node features (UPDATED LIST) ---
+    feature_cols_base = ['amount_norm', 'hour_norm', 'device_id', 'merchant_id', 'sender_id', 'receiver_id']
+    feature_cols_aug = ['sender_id_fraud_freq', 'device_id_fraud_freq']
+    
+    all_feature_cols = feature_cols_base + feature_cols_aug
+    actual_feature_cols = [col for col in all_feature_cols if col in df.columns]
+
+    features_np = df[actual_feature_cols].values.astype(np.float32)
     features = torch.tensor(features_np, dtype=torch.float)
 
-    # --- 4. Create labels ---
+    # --- 4. Create labels (no change) ---
     labels = torch.tensor(df['is_fraud'].astype(int).values, dtype=torch.long)
 
-    # --- 5. Create edges ---
+    # --- 5. Create edges (no change) ---
     src_nodes = []
     dst_nodes = []
 
@@ -81,7 +103,7 @@ def load_transaction_graph(csv_path="data/transactions.csv"):
 
     edge_index = torch.tensor([src_nodes, dst_nodes], dtype=torch.long)
 
-    # --- 6. Build edge features (DTYPE FIX RETAINED) ---
+    # --- 6. Build edge features (no change) ---
     time_diff_np = np.abs(df['hour_norm'].values[src_nodes] - df['hour_norm'].values[dst_nodes]).astype(np.float32)
     amount_diff_np = np.abs(df['amount_norm'].values[src_nodes] - df['amount_norm'].values[dst_nodes]).astype(np.float32)
 
@@ -99,11 +121,12 @@ def load_transaction_graph(csv_path="data/transactions.csv"):
     )
 
     print(f"Graph built: {data.num_nodes} nodes, {data.num_edges} edges")
+    # Feature dim is now 8
     print(f"Feature dim: {data.num_features}, Edge dim: {data.edge_attr.size(1)}")
 
-    return data, label_encoders, scaler
+    return data, label_encoders, scaler, fraud_freq_map 
 
 
 if __name__ == "__main__":
-    data, _, _ = load_transaction_graph()
+    data, _, _, _ = load_transaction_graph()
     print(data)

@@ -12,7 +12,7 @@ def train_and_save_model(save_path="models/gnn_model.pt"):
     # -------------------------------
     # 1. Load dataset (FIXED: Unpack the tuple)
     # -------------------------------
-    data, _, _ = load_transaction_graph() 
+    data, _, _, _ = load_transaction_graph() 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
@@ -43,10 +43,16 @@ def train_and_save_model(save_path="models/gnn_model.pt"):
         edge_attr_dim=edge_attr_dim,
     ).to(device)
 
+    fraud_count = data.y.sum().item()
+    legit_count = data.y.size(0) - fraud_count
+    
+    pos_weight = torch.tensor([legit_count / fraud_count]).to(device)
+    
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-4)
-    criterion = nn.BCELoss()
-
+    criterion = nn.BCELoss(weight=pos_weight) 
+    
     print(f"Model initialized with {sum(p.numel() for p in model.parameters()):,} parameters.")
+    print(f"Class Weight (Fraud): {pos_weight.item():.2f}")
     print("Training started...\n")
 
     # -------------------------------
@@ -67,7 +73,7 @@ def train_and_save_model(save_path="models/gnn_model.pt"):
         y_true = data.y.to(device).float()
         y_pred_train = out[train_idx]
         y_true_train = y_true[train_idx]
-
+        
         loss = criterion(y_pred_train, y_true_train)
         loss.backward()
         optimizer.step()
@@ -79,8 +85,9 @@ def train_and_save_model(save_path="models/gnn_model.pt"):
         with torch.no_grad():
             y_pred_test = out[test_idx]
             y_true_test = y_true[test_idx]
-
-            val_loss = criterion(y_pred_test, y_true_test).item()
+            
+            unweighted_criterion = nn.BCELoss()
+            val_loss = unweighted_criterion(y_pred_test, y_true_test).item()
 
             y_pred_bin = (y_pred_test.cpu().numpy() > 0.5).astype(int)
             y_true_np = y_true_test.cpu().numpy()
