@@ -1,2 +1,2 @@
 # Nexus-Disrupt-AI-agent
-# Nexus-Disrupt-AI-agent
+Nexus Disrupt is a plug-and-play fraud monitoring layer designed for Zenith bank. It integrates seamlessly with existing core banking systems to identify, flag, and act on high-risk transactions in real-time.
